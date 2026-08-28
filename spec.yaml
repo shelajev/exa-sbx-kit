@@ -1,0 +1,51 @@
+schemaVersion: "1"
+kind: mixin
+name: exa
+displayName: Exa Search
+description: Adds Exa web search and page fetching to sandboxed agents through MCP without exposing the host-stored API key.
+
+commands:
+  startup:
+    - command:
+        - node
+        - -e
+        - |
+          const fs = require("fs");
+          const path = require("path");
+          const url = "https://mcp.exa.ai/mcp?tools=web_search_exa,web_search_advanced_exa,web_fetch_exa";
+          const configs = [
+            [path.join(process.cwd(), ".mcp.json"), "mcpServers", { type: "http", url }],
+            [path.join(process.cwd(), ".vscode", "mcp.json"), "servers", { type: "http", url }],
+            [path.join(process.env.HOME, ".gemini", "settings.json"), "mcpServers", { httpUrl: url }]
+          ];
+          for (const [file, section, server] of configs) {
+            let config = {};
+            if (fs.existsSync(file)) {
+              try { config = JSON.parse(fs.readFileSync(file, "utf8")); }
+              catch { console.warn(`Exa kit: skipped invalid JSON in ${file}`); continue; }
+            }
+            config[section] = { ...(config[section] || {}), exa: server };
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
+          }
+      user: "1000"
+      description: Add Exa's remote MCP server to standard project, VS Code, and Gemini agent configurations
+    - command: ["sh", "-c", "if command -v codex >/dev/null 2>&1 && ! codex mcp get exa >/dev/null 2>&1; then codex mcp add exa --url 'https://mcp.exa.ai/mcp?tools=web_search_exa,web_search_advanced_exa,web_fetch_exa'; fi"]
+      user: "1000"
+      description: Add Exa's remote MCP server to Codex (idempotent)
+
+credentials:
+  sources:
+    exa:
+      env:
+        - EXA_API_KEY
+
+network:
+  allowedDomains:
+    - mcp.exa.ai
+  serviceDomains:
+    mcp.exa.ai: exa
+  serviceAuth:
+    exa:
+      headerName: Authorization
+      valueFormat: "Bearer %s"
