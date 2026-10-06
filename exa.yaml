@@ -1,10 +1,10 @@
 # syntax=docker/sandbox-kit:3@sha256:e6a397771e865625047cf84256a914c7974b3e749d858259b5bc9c653ddb6f0d
 schemaVersion: "3"
 displayName: Exa Search
-description: Adds Exa web search, crawling, and research tools to sandboxed agents via the official exa-mcp-server, packaged into the kit image and wired into each agent's MCP config. The API key stays host-side; the sandbox proxy injects it on outbound calls.
+description: Wires hosted Exa MCP into sandboxed agents. Uses free access without a key, or authenticated access through optional host-side key injection.
 author: "Oleg Šelajev <shelajev@users.noreply.github.com>"
 sourceUrl: https://github.com/shelajev/exa-sbx-kit
-version: "2.0.0"
+version: "2.0.1"
 licenses: [MIT]
 
 kind: mixin
@@ -23,19 +23,18 @@ capabilities:
     config:
       runtime:
         allow:
-          - api.exa.ai
+          - mcp.exa.ai
 
   - type: com.docker.sandbox/credential@1
     optional: true
-    description: Exa API access for the packaged exa-mcp-server
+    description: Optional authenticated access to hosted Exa MCP
     config:
       service: exa
       phase: runtime
       apiKey:
-        name: EXA_API_KEY
         proxyManaged: true
         inject:
-          - domain: api.exa.ai
+          - domain: mcp.exa.ai
             header: x-api-key
             format: "%s"
 
@@ -46,19 +45,20 @@ capabilities:
             - exa-node
             - /usr/local/libexec/exa-configure-mcp.cjs
           user: "1000"
-          description: Wire the packaged exa-mcp-server into project, VS Code, and Gemini agent MCP configs (idempotent)
+          description: Wire hosted Exa MCP into project, VS Code, and Gemini agent configs (idempotent)
         - command:
             - sh
             - -c
-            - if command -v codex >/dev/null 2>&1; then if codex mcp get exa >/dev/null 2>&1; then codex mcp remove exa || exit; fi; codex mcp add exa -- exa-mcp-server; fi
+            - if command -v codex >/dev/null 2>&1; then if codex mcp get exa >/dev/null 2>&1; then codex mcp remove exa || exit; fi; codex mcp add exa --url https://mcp.exa.ai/mcp; fi
           user: "1000"
-          description: Wire the packaged exa-mcp-server into Codex (idempotent)
+          env: [CODEX_HOME]
+          description: Wire hosted Exa MCP into Codex (idempotent)
 
   - type: com.docker.sandbox/agent-context@1
     config:
       content: |
-        Exa web search is available through the exa-mcp-server (stdio MCP, wired into this agent's config).
+        Exa web search is available through hosted MCP at https://mcp.exa.ai/mcp, wired into this agent's config.
         - For questions needing current web information, search with Exa before saying you cannot.
-        - Tools cover web search, page crawling/content extraction, and deeper research searches; pick the closest match.
-        - Requests authenticate via the sandbox proxy: the EXA_API_KEY in this environment is a placeholder and the real key never enters the sandbox. If Exa calls return unauthorized, tell the user to run `sbx secret set -g exa` on the host and restart the sandbox.
+        - Search and page fetching work without a key, subject to free rate limits. agent_run research requires an authenticated Exa account.
+        - If a host Exa key is configured, the sandbox proxy injects x-api-key on requests. No key or sentinel is stored in agent configuration. For authenticated access or higher limits, run `sbx secret set -g exa` on the host and restart the sandbox. An invalid configured key must be corrected; it is not silently ignored.
         - The kit packages its own Node.js runtime; the workload must provide glibc 2.36 or newer (Debian 12 or newer).

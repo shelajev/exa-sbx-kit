@@ -16,21 +16,26 @@ function fixture(t) {
     cwd: project, env: { ...process.env, HOME: home }, encoding: 'utf8'
   }) };
 }
-test('migrates hosted Exa, preserves other servers, and remains idempotent', t => {
+test('migrates local Exa to hosted MCP, preserves other servers, and remains idempotent', t => {
   const f = fixture(t);
   const file = path.join(f.project, '.mcp.json');
   fs.writeFileSync(file, JSON.stringify({ other: true, mcpServers: {
-    exa: { type: 'http', url: 'https://mcp.exa.ai/mcp' }, keep: { command: 'keep' }
+    exa: { type: 'stdio', command: 'exa-mcp-server' }, keep: { command: 'keep' }
   }}));
   assert.equal(f.run().status, 0);
   const result = JSON.parse(fs.readFileSync(file));
   assert.equal(result.other, true);
   assert.equal(result.mcpServers.keep.command, 'keep');
-  assert.deepEqual(result.mcpServers.exa, { type: 'stdio', command: 'exa-mcp-server' });
+  assert.deepEqual(result.mcpServers.exa, { type: 'http', url: 'https://mcp.exa.ai/mcp' });
   for (const [file, section] of [
     [path.join(f.project, '.vscode/mcp.json'), 'servers'],
     [path.join(f.home, '.gemini/settings.json'), 'mcpServers']
-  ]) assert.equal(JSON.parse(fs.readFileSync(file))[section].exa.command, 'exa-mcp-server');
+  ]) {
+    const entry = JSON.parse(fs.readFileSync(file))[section].exa;
+    assert.deepEqual(entry, section === 'servers'
+      ? { type: 'http', url: 'https://mcp.exa.ai/mcp' }
+      : { httpUrl: 'https://mcp.exa.ai/mcp' });
+  }
   const before = fs.readFileSync(file, 'utf8');
   assert.equal(f.run().status, 0);
   assert.equal(fs.readFileSync(file, 'utf8'), before);
@@ -83,10 +88,24 @@ esac
     assert.match(calls, /mcp remove exa/);
     if (removeStatus === '0') {
       assert.equal(result.status, 0);
-      assert.match(calls, /mcp add exa -- exa-mcp-server/);
+      assert.match(calls, /mcp add exa --url https:\/\/mcp\.exa\.ai\/mcp/);
     } else {
       assert.notEqual(result.status, 0);
       assert.doesNotMatch(calls, /mcp add/);
     }
+  }
+});
+
+// Credentials belong to the SBX proxy, never the client JSON.
+test('hosted configuration is identical with or without a key environment', t => {
+  const f = fixture(t);
+  for (const key of ['', 'proxy-managed', 'test-only-not-a-real-key']) {
+    const result = spawnSync(process.execPath, [hook], {
+      cwd: f.project, env: { ...process.env, HOME: f.home, EXA_API_KEY: key }, encoding: 'utf8'
+    });
+    assert.equal(result.status, 0);
+    const raw = fs.readFileSync(path.join(f.project, '.mcp.json'), 'utf8');
+    assert.deepEqual(JSON.parse(raw).mcpServers.exa, { type: 'http', url: 'https://mcp.exa.ai/mcp' });
+    if (key) assert.ok(!raw.includes(key));
   }
 });

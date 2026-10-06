@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1
+
+- Use hosted Exa MCP for free keyless search and authenticated access.
+- Inject an optional host API key on mcp.exa.ai without storing keys in agent configs.
+- Migrate Claude, VS Code, Gemini, and Codex to HTTP MCP.
+
 ## 2.0.0
 
 - Port the kit to v3 OCI packaging with an explicit Node runtime overlay.

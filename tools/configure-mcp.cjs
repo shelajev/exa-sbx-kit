@@ -1,13 +1,14 @@
 const configure = () => {
   const fs = require("fs");
   const path = require("path");
-  const server = { type: "stdio", command: "exa-mcp-server" };
+  const server = { type: "http", url: "https://mcp.exa.ai/mcp" };
   const configs = [
     [path.join(process.cwd(), ".mcp.json"), "mcpServers"],
     [path.join(process.cwd(), ".vscode", "mcp.json"), "servers"],
     [path.join(process.env.HOME, ".gemini", "settings.json"), "mcpServers"]
   ];
   for (const [file, section] of configs) {
+    const entry = file === configs[2][0] ? { httpUrl: server.url } : server;
     let config = {};
     if (fs.existsSync(file)) {
       try {
@@ -28,8 +29,8 @@ const configure = () => {
       continue;
     }
     const cur = config[section] && config[section].exa;
-    if (JSON.stringify(cur) === JSON.stringify(server)) { continue; }
-    config[section] = { ...(config[section] || {}), exa: server };
+    if (JSON.stringify(cur) === JSON.stringify(entry)) { continue; }
+    config[section] = { ...(config[section] || {}), exa: entry };
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
   }
