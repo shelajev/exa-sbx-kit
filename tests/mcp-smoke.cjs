@@ -27,7 +27,9 @@ function smoke() {
         send({ method: 'notifications/initialized' });
         send({ id: 2, method: 'tools/list', params: {} });
       } else if (message.id === 2) {
-        assert.ok(message.result.tools.some(tool => tool.name === 'web_search_exa'));
+        const expected = (process.env.SMOKE_EXPECTED_TOOLS ||
+          'web_search_exa,web_search_advanced_exa,web_fetch_exa,agent_run').split(',').sort();
+        assert.deepEqual(message.result.tools.map(tool => tool.name).sort(), expected);
         discovered = true;
         console.log('Packaged Node starts the MCP server and exposes Exa search.');
         clearTimeout(timer); child.stdin.end();

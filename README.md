@@ -85,3 +85,7 @@ Docker Hub publishing needs the repository variable `DOCKERHUB_USERNAME` and
 repository secret `DOCKERHUB_TOKEN` (a Docker Hub access token with write access).
 Configure these in [GitHub Actions settings](https://github.com/shelajev/exa-sbx-kit/settings/secrets/actions)
 before merging. Pull request builds do not need registry credentials.
+
+The default MCP tools are `web_search_exa`, `web_search_advanced_exa`,
+`web_fetch_exa`, and `agent_run`. Set `ENABLED_TOOLS` (or `TOOLS`) in the sandbox
+to override that list; `ENABLED_TOOLS` takes precedence when both are set.

@@ -17,6 +17,7 @@ COPY tools/configure-mcp.cjs /usr/local/libexec/exa-configure-mcp.cjs
 COPY --chmod=755 <<'EOF' /usr/local/bin/exa-mcp-server
 #!/bin/sh
 export LD_LIBRARY_PATH="/opt/exa/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export ENABLED_TOOLS="${ENABLED_TOOLS-${TOOLS-web_search_exa,web_search_advanced_exa,web_fetch_exa,agent_run}}"
 exec /opt/exa/bin/node /opt/exa-server/lib/node_modules/exa-mcp-server/dist/stdio.cjs "$@"
 EOF
 COPY --chmod=755 <<'EOF' /usr/local/bin/exa-node

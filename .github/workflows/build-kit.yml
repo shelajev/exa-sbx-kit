@@ -46,6 +46,11 @@ jobs:
             -f exa.yaml -t exa-content:check --load .
           docker build -f tests/runtime.dockerfile -t exa-runtime:check .
           docker run --rm -e EXA_API_KEY=ci-placeholder exa-runtime:check
+          docker run --rm -e EXA_API_KEY=ci-placeholder -e TOOLS=web_fetch_exa \
+            -e SMOKE_EXPECTED_TOOLS=web_fetch_exa exa-runtime:check
+          docker run --rm -e EXA_API_KEY=ci-placeholder \
+            -e ENABLED_TOOLS=web_search_exa -e TOOLS=web_fetch_exa \
+            -e SMOKE_EXPECTED_TOOLS=web_search_exa exa-runtime:check
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: exa-v3-kit
