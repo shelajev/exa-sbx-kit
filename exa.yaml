@@ -1,4 +1,4 @@
-# syntax=docker/sandbox-kit:3
+# syntax=docker/sandbox-kit:3@sha256:e6a397771e865625047cf84256a914c7974b3e749d858259b5bc9c653ddb6f0d
 schemaVersion: "3"
 displayName: Exa Search
 description: Adds Exa web search, crawling, and research tools to sandboxed agents via the official exa-mcp-server, packaged into the kit image and wired into each agent's MCP config. The API key stays host-side; the sandbox proxy injects it on outbound calls.
@@ -36,42 +36,21 @@ capabilities:
         proxyManaged: true
         inject:
           - domain: api.exa.ai
-            header: Authorization
-            format: "Bearer %s"
+            header: x-api-key
+            format: "%s"
 
   - type: com.docker.sandbox/lifecycle@1
     config:
       startup:
         - command:
-            - node
-            - -e
-            - |
-              const fs = require("fs");
-              const path = require("path");
-              const server = { type: "stdio", command: "exa-mcp-server" };
-              const configs = [
-                [path.join(process.cwd(), ".mcp.json"), "mcpServers"],
-                [path.join(process.cwd(), ".vscode", "mcp.json"), "servers"],
-                [path.join(process.env.HOME, ".gemini", "settings.json"), "mcpServers"]
-              ];
-              for (const [file, section] of configs) {
-                let config = {};
-                if (fs.existsSync(file)) {
-                  try { config = JSON.parse(fs.readFileSync(file, "utf8")); }
-                  catch { console.warn(`Exa kit: skipped invalid JSON in ${file}`); continue; }
-                }
-                const cur = config[section] && config[section].exa;
-                if (cur && cur.command === "exa-mcp-server") { continue; }
-                config[section] = { ...(config[section] || {}), exa: server };
-                fs.mkdirSync(path.dirname(file), { recursive: true });
-                fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
-              }
+            - exa-node
+            - /usr/local/libexec/exa-configure-mcp.cjs
           user: "1000"
           description: Wire the packaged exa-mcp-server into project, VS Code, and Gemini agent MCP configs (idempotent)
         - command:
             - sh
             - -c
-            - if command -v codex >/dev/null 2>&1 && ! codex mcp get exa >/dev/null 2>&1; then codex mcp add exa -- exa-mcp-server; fi
+            - if command -v codex >/dev/null 2>&1; then if codex mcp get exa >/dev/null 2>&1; then codex mcp remove exa || exit; fi; codex mcp add exa -- exa-mcp-server; fi
           user: "1000"
           description: Wire the packaged exa-mcp-server into Codex (idempotent)
 
@@ -82,4 +61,4 @@ capabilities:
         - For questions needing current web information, search with Exa before saying you cannot.
         - Tools cover web search, page crawling/content extraction, and deeper research searches; pick the closest match.
         - Requests authenticate via the sandbox proxy: the EXA_API_KEY in this environment is a placeholder and the real key never enters the sandbox. If Exa calls return unauthorized, tell the user to run `sbx secret set -g exa` on the host and restart the sandbox.
-        - The server requires Node.js in the sandbox image; all current coding-agent sandbox images include it.
+        - The kit packages its own Node.js runtime; the workload must provide glibc 2.36 or newer (Debian 12 or newer).

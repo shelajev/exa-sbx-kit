@@ -1,8 +1,9 @@
-#!/bin/sh
-# Run a named sandbox with the local v3 kit attached.
+#!/usr/bin/env bash
 # Usage: ./run.sh [sandbox-name] [agent] [workspace]
-set -e
-NAME="${1:-exa-current}"
-AGENT="${2:-claude}"
-WORKSPACE="${3:-.}"
-exec sbx run --name "$NAME" --kit "$PWD/exa.yaml" "$AGENT" "$WORKSPACE"
+set -euo pipefail
+main() {
+  local kit_dir
+  kit_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  exec sbx run --name "${1:-exa-current}" --kit "$kit_dir" "${2:-claude}" "${3:-.}"
+}
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
