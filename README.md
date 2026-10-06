@@ -58,11 +58,11 @@ can store and inspect it as an ordinary image. This mixin needs a workload to ru
 Pull requests validate the descriptor, test configuration migration, and build
 an OCI archive for `linux/amd64` and `linux/arm64`. Docker's Kit TCK checks the
 archive. Download `exa-v3-kit` from the Actions run to inspect it.
-On `main`, the workflow also publishes to GHCR with `2.0.0`, `latest`, and a
+On `main`, the workflow also publishes to Docker Hub with `2.0.0`, `latest`, and a
 commit-specific `sha-…` tag, then validates the published artifact.
 
 ```bash
-sbx run --kit ghcr.io/shelajev/exa-sbx-kit:2.0.0 claude .
+sbx run --kit docker.io/olegselajev241/exa-sbx-kit:2.0.0 claude .
 ```
 
 The kit carries its own Node runtime and private C++ libraries. The workload
@@ -80,3 +80,8 @@ bash -n run.sh
 Dependabot checks Go, Docker, and Actions pins monthly. Review the Exa version
 in `exa.yaml` and the build frontend tag monthly against upstream releases.
 Search authentication requires a host Exa key; CI uses no live API credentials.
+
+Docker Hub publishing needs the repository variable `DOCKERHUB_USERNAME` and
+repository secret `DOCKERHUB_TOKEN` (a Docker Hub access token with write access).
+Configure these in [GitHub Actions settings](https://github.com/shelajev/exa-sbx-kit/settings/secrets/actions)
+before merging. Pull request builds do not need registry credentials.
