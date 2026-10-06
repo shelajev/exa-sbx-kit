@@ -1,70 +1,93 @@
-# Exa Docker Sandboxes Kit
+# Exa Docker Sandboxes Kit (v3)
 
-Docker Sandboxes kit that gives sandboxed coding agents [Exa](https://exa.ai) web search, advanced search, and page fetching through MCP. The Exa API key remains in the host secret store and is injected into requests by the Docker Sandboxes proxy; it is never placed in the sandbox.
+Docker Sandboxes kit that packages the official [`exa-mcp-server`](https://www.npmjs.com/package/exa-mcp-server)
+into the sandbox as a **v3 kit OCI artifact** — descriptor in the manifest
+annotation, content in layers ([SPEC-v3](https://github.com/docker/sandbox-kit-spec)).
+
+The kit gives sandboxed coding agents Exa web search, crawling/content
+extraction, and research tools through MCP, wired into each agent's config
+(Claude Code / VS Code / Gemini / Codex). The Exa API key stays in the host
+secret store; the sandbox proxy injects `x-api-key: …` on outbound
+`api.exa.ai` requests — the key never enters the sandbox.
+
+## Layout (v3 companion pair)
+
+| File | Role |
+|---|---|
+| `exa.yaml` | Kit descriptor (`schemaVersion: "3"`, `kind: mixin`). Capabilities: `network-policy@2` (allow `api.exa.ai`), `credential@1` (proxy-managed `EXA_API_KEY`), `lifecycle@1` (agent-config wiring hooks), `agent-context@1` (usage guidance for the agent). |
+| `exa.dockerfile` | Content recipe: `node:22.23.3-bookworm-slim` + pinned `exa-mcp-server` (version comes from the descriptor's `mcpServerVersion` build-arg). |
+| `tools/validate-desc/` | Local validator built from `docker/sandbox-kit-spec`'s own Go library (`spec.Decode` + `Validate` + `ValidateRaw` + `RequireAuthoredProvides`). |
 
 ## Quick start
 
-1. Create an API key in the [Exa dashboard](https://dashboard.exa.ai/api-keys).
-
-2. Store it as a sandbox secret on the host:
-
-   ```bash
-   sbx secret set -g exa
-   # paste the Exa API key when prompted
-   ```
-
-3. Run a sandbox with the kit attached. Replace `.` with the workspace path you want:
-
-   ```bash
-   sbx run --kit git+https://github.com/shelajev/exa-sbx-kit.git claude .
-   ```
-
-Inside the sandbox, ask the agent to search the web with Exa or fetch a page.
-
-## Named sandbox
-
-For a persistent sandbox you can re-attach to:
-
 ```bash
-sbx create --name exa-current \
-  --kit git+https://github.com/shelajev/exa-sbx-kit.git claude .
+# 1. one-time: store your Exa key host-side
+sbx secret set -g exa          # paste the key from dashboard.exa.ai
 
-sbx run exa-current
+# 2. run a sandbox with the kit (from a laptop — everything is local)
+./run.sh exa-current claude .
+# or point --kit at this checkout from anywhere
 ```
 
-For custom kits, pass `--kit` again when re-running an existing sandbox if `sbx` does not resolve it automatically.
+Ask the agent to search the web — it answers with Exa.
 
-## How it works
-
-The kit declares an `exa` credential service in `spec.yaml`. The Docker Sandboxes proxy reads the host-stored `exa` secret and injects `Authorization: Bearer <key>` only into requests to `mcp.exa.ai`. The key is not copied into an environment variable or configuration file in the sandbox.
-
-At startup, the kit idempotently adds Exa's hosted MCP endpoint to:
-
-- Codex's MCP configuration
-- the standard project `.mcp.json` used by Claude Code and other compatible agents
-- `.vscode/mcp.json`
-- Gemini CLI's user settings
-
-The endpoint enables `web_search_exa`, `web_search_advanced_exa`, and `web_fetch_exa`.
-
-## Network policy
-
-The kit allows only `mcp.exa.ai`. Exa performs searches and page retrieval remotely, so target websites do not need to be added to the sandbox's network allowlist.
-
-## Local clone
-
-If you clone this repository, `run.sh` runs a named sandbox using the local kit path:
+## Build & verify from source
 
 ```bash
-./run.sh exa-current
+# validate the descriptor with Docker's own spec library
+go run ./tools/validate-desc exa.yaml
+
+# build the kit artifact (frontend dispatched by the descriptor's syntax line)
+docker buildx build --build-arg mcpServerVersion=3.4.1 \
+  -f exa.yaml -t <registry>/exa-sbx-kit:2.0.0 --push .
 ```
 
-Use any sandbox name as the first argument:
+The build-arg is expanded into the published descriptor at build time
+(SPEC-v3 §9.1); the artifact is an ordinary OCI image — pullable, `FROM`-able,
+and inspectable with stock tooling. A runtime that ignores the annotation
+can store and inspect it as an ordinary image. This mixin needs a workload to run.
+
+## Local development notes
+
+- The v1 remote-MCP variant of this kit lives in git history
+  (`spec.yaml.v1.bak` is the pre-port snapshot for reference).
+- `run.sh [name] [agent] [workspace]` wraps `sbx run --kit` with the local path.
+
+## Automated builds
+
+Pushes to `main` and manual runs on `main` validate the descriptor, test
+configuration migration, and build an OCI archive for `linux/amd64` and `linux/arm64`. Docker's Kit TCK checks the
+archive. Download `exa-v3-kit` from the Actions run to inspect it.
+With publishing credentials configured, main builds also publish to Docker Hub with `2.0.0`, `latest`, and a
+commit-specific `sha-…` tag, then validates the published artifact.
 
 ```bash
-./run.sh my-sandbox
+sbx run --kit docker.io/olegselajev241/exa-sbx-kit:2.0.0 claude .
 ```
 
-## License
+The kit carries its own Node runtime and private C++ libraries. The workload
+must supply glibc 2.36 or newer (Debian 12 or newer); Alpine workloads are not
+supported. Startup owns the `exa` MCP entry and migrates the old hosted endpoint.
+Other servers and malformed JSON files are preserved.
 
-MIT. See [LICENSE](LICENSE).
+```bash
+go test ./...
+go vet ./...
+node --test tests/*.test.cjs
+bash -n run.sh
+```
+
+Dependabot checks Go, Docker, and Actions pins monthly. Review the Exa version
+in `exa.yaml` and the build frontend tag monthly against upstream releases.
+Search authentication requires a host Exa key; CI uses no live API credentials.
+
+Docker Hub publishing needs the repository variable `DOCKERHUB_USERNAME` and
+repository secret `DOCKERHUB_TOKEN` (a Docker Hub access token with write access).
+Configure these in [GitHub Actions settings](https://github.com/shelajev/exa-sbx-kit/settings/secrets/actions)
+to enable publishing. Without these settings, builds still produce the validated
+OCI archive and explicitly report that registry publication was skipped.
+GitHub Actions does not run on pull requests.
+
+The default MCP tools are `web_search_exa`, `web_search_advanced_exa`,
+`web_fetch_exa`, and `agent_run`. Set `ENABLED_TOOLS` (or `TOOLS`) in the sandbox
+to override that list; `ENABLED_TOOLS` takes precedence when both are set.

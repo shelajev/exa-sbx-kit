@@ -1,0 +1,88 @@
+name: Build v3 kit
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: kit-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@90ad2b35f69faf97585ad74d28fa006d2739b7af
+        with:
+          go-version-file: go.mod
+      - name: Validate and test
+        run: |
+          go run ./tools/validate-desc exa.yaml
+          go test ./...
+          go vet ./...
+          test -z "$(gofmt -l tools/validate-desc)"
+          bash -n run.sh
+          node --test tests/*.test.cjs
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build both platforms
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 \
+            -f exa.yaml -t exa-sbx-kit:check \
+            --output type=oci,dest=/tmp/exa-kit.tar .
+          mkdir /tmp/exa-kit-layout
+          tar -xf /tmp/exa-kit.tar -C /tmp/exa-kit-layout
+      - name: Check OCI conformance
+        run: go tool kit-tck validate --layout /tmp/exa-kit-layout check
+      - name: Smoke test the packaged runtime
+        run: |
+          docker buildx build --platform linux/amd64 --provenance=false \
+            -f exa.yaml -t exa-content:check --load .
+          docker build -f tests/runtime.dockerfile -t exa-runtime:check .
+          docker run --rm -e EXA_API_KEY=ci-placeholder exa-runtime:check
+          docker run --rm -e EXA_API_KEY=ci-placeholder -e TOOLS=web_fetch_exa \
+            -e SMOKE_EXPECTED_TOOLS=web_fetch_exa exa-runtime:check
+          docker run --rm -e EXA_API_KEY=ci-placeholder \
+            -e ENABLED_TOOLS=web_search_exa -e TOOLS=web_fetch_exa \
+            -e SMOKE_EXPECTED_TOOLS=web_search_exa exa-runtime:check
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: exa-v3-kit
+          path: /tmp/exa-kit.tar
+          retention-days: 14
+      - name: Check Docker Hub credentials
+        id: publish
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "::notice::Docker Hub publication skipped: set DOCKERHUB_USERNAME and DOCKERHUB_TOKEN to enable it. The OCI build artifact is available."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Log in to Docker Hub
+        if: steps.publish.outputs.enabled == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Publish validated kit
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+        if: steps.publish.outputs.enabled == 'true'
+        run: |
+          version=$(sed -n 's/^version: "\(.*\)"/\1/p' exa.yaml)
+          test -n "$version"
+          docker buildx build --platform linux/amd64,linux/arm64 -f exa.yaml \
+            -t "docker.io/$DOCKERHUB_USERNAME/exa-sbx-kit:$version" \
+            -t "docker.io/$DOCKERHUB_USERNAME/exa-sbx-kit:latest" \
+            -t "docker.io/$DOCKERHUB_USERNAME/exa-sbx-kit:sha-$GITHUB_SHA" --push .
+          go tool kit-tck validate "docker.io/$DOCKERHUB_USERNAME/exa-sbx-kit:sha-$GITHUB_SHA"

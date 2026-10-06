@@ -1,0 +1,64 @@
+# syntax=docker/sandbox-kit:3@sha256:e6a397771e865625047cf84256a914c7974b3e749d858259b5bc9c653ddb6f0d
+schemaVersion: "3"
+displayName: Exa Search
+description: Adds Exa web search, crawling, and research tools to sandboxed agents via the official exa-mcp-server, packaged into the kit image and wired into each agent's MCP config. The API key stays host-side; the sandbox proxy injects it on outbound calls.
+author: "Oleg Šelajev <shelajev@users.noreply.github.com>"
+sourceUrl: https://github.com/shelajev/exa-sbx-kit
+version: "2.0.0"
+licenses: [MIT]
+
+kind: mixin
+
+args:
+  mcpServerVersion:
+    default: "3.4.1"
+    pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
+    description: exa-mcp-server (npm) version to package
+    buildArg: EXA_MCP_SERVER_VERSION
+
+provides: ["exa-search"]
+
+capabilities:
+  - type: com.docker.sandbox/network-policy@2
+    config:
+      runtime:
+        allow:
+          - api.exa.ai
+
+  - type: com.docker.sandbox/credential@1
+    optional: true
+    description: Exa API access for the packaged exa-mcp-server
+    config:
+      service: exa
+      phase: runtime
+      apiKey:
+        name: EXA_API_KEY
+        proxyManaged: true
+        inject:
+          - domain: api.exa.ai
+            header: x-api-key
+            format: "%s"
+
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      startup:
+        - command:
+            - exa-node
+            - /usr/local/libexec/exa-configure-mcp.cjs
+          user: "1000"
+          description: Wire the packaged exa-mcp-server into project, VS Code, and Gemini agent MCP configs (idempotent)
+        - command:
+            - sh
+            - -c
+            - if command -v codex >/dev/null 2>&1; then if codex mcp get exa >/dev/null 2>&1; then codex mcp remove exa || exit; fi; codex mcp add exa -- exa-mcp-server; fi
+          user: "1000"
+          description: Wire the packaged exa-mcp-server into Codex (idempotent)
+
+  - type: com.docker.sandbox/agent-context@1
+    config:
+      content: |
+        Exa web search is available through the exa-mcp-server (stdio MCP, wired into this agent's config).
+        - For questions needing current web information, search with Exa before saying you cannot.
+        - Tools cover web search, page crawling/content extraction, and deeper research searches; pick the closest match.
+        - Requests authenticate via the sandbox proxy: the EXA_API_KEY in this environment is a placeholder and the real key never enters the sandbox. If Exa calls return unauthorized, tell the user to run `sbx secret set -g exa` on the host and restart the sandbox.
+        - The kit packages its own Node.js runtime; the workload must provide glibc 2.36 or newer (Debian 12 or newer).
