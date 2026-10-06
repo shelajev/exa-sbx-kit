@@ -76,6 +76,6 @@ jobs:
           test -n "$version"
           docker buildx build --platform linux/amd64,linux/arm64 -f exa.yaml \
             -t "docker.io/$DOCKERHUB_USERNAME/exa-sbx-kit:$version" \
-            -t docker.io/$DOCKERHUB_USERNAME/exa-sbx-kit:latest \
+            -t "docker.io/$DOCKERHUB_USERNAME/exa-sbx-kit:latest" \
             -t "docker.io/$DOCKERHUB_USERNAME/exa-sbx-kit:sha-$GITHUB_SHA" --push .
           go tool kit-tck validate "docker.io/$DOCKERHUB_USERNAME/exa-sbx-kit:sha-$GITHUB_SHA"
